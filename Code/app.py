@@ -14,19 +14,47 @@ app = Flask(__name__)
 app.config.from_object(ScheduleConfig())
 CORS(app, resources=r'/*')
 
-mydb = mysql.connector.connect(
-    host="119.3.210.244",  # 数据库主机地址
-    user="root",  # 数据库用户名
-    passwd="******",  # 数据库密码
-    database="data_integration"
-)
+mydb = None
+db_conf={
+    "host" : "119.3.210.244",  # 数据库主机地址
+    "user":"root",  # 数据库用户名
+    "password":"***",  # 数据库密码
+    "database":"data_integration",
+}
+
+def db_connect():
+    """数据库连接
+    根据配置信息,连接数据库
+    Arguments:
+        conf {dict} -- 连接配置信息
+    Returns:
+        MySQLConnection -- 数据库连接对象
+    Raises:
+        e -- 连接报错异常
+    """
+    global mydb
+    global db_conf
+    try:
+        if isinstance(mydb, mysql.connector.connection.MySQLConnection):
+            mydb.ping(True,1,1)
+            return mydb
+    except Exception as e:
+        print('mysql not connected')
+ 
+    try:
+        mydb = mysql.connector.connect(**db_conf)
+        print('new connect operation')
+        return mydb
+    except Exception as e:
+        raise e
+
 @app.route('/')
 def hello_world():
     return 'Hello, W o r l d ! '
 
 @app.route('/getKnowledgeGraph/<code>')
 def getKnowledgeGraph(code):
-    mycursor = mydb.cursor()
+    mycursor = db_connect().cursor()
     mycursor.execute("SELECT * from company where ts_code = %s",(code,))
     company_info =None
     result=mycursor.fetchall()
@@ -113,18 +141,19 @@ def getKnowledgeGraph(code):
 # 每周2
 @app.route('/return_rate/single')
 def get_return_rate():
-    begin = datetime.date(2019,10,1)
+    begin = datetime.date(2019,10,8)
     end = datetime.date(2020,6,30)
     d = begin
     delta_week = datetime.timedelta(days=7)
     result_list = [((d-delta_week).strftime("%Y%m%d"),0)]
     dao_result = return_rate_dao.get_all_return_rate()
     result_list += dao_result
-    return json.dumps(ff_model.get_back_test_and_base(result_list) )
+    
+    return json.dumps(ff_model.get_back_test_and_base(result_list),ensure_ascii=False)
 
 @app.route('/getStockCurrentInfo/<code>')
 def getStockCurrentInfo(code):
-    mycursor = mydb.cursor()
+    mycursor = db_connect().cursor()
     mycursor.execute("SELECT * from daily_line where ts_code= %s ORDER BY trade_date desc limit 1",(code,))
     line=None
     result=mycursor.fetchall()
@@ -162,7 +191,7 @@ def getStockCurrentInfo(code):
 
 @app.route('/getRecommendStocks')
 def get_recommend_stocks():
-    mycursor = mydb.cursor()
+    mycursor = db_connect().cursor()
     mycursor.execute("SELECT date,recommend_stocks from alter_returns_rate ORDER BY date desc")
     result = mycursor.fetchall()
     form=[]
@@ -175,9 +204,9 @@ def get_recommend_stocks():
         form.append(item)
     return json.dumps(form,ensure_ascii=False)
 
+
 if __name__ == "__main__":
     scheduler = APScheduler()
     scheduler.init_app(app)
     scheduler.start()
-    app.run(host='0.0.0.0',debug=False, port=9001)
-    
+    app.run(host='0.0.0.0',debug=False, port=9000)
